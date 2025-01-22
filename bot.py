@@ -48,11 +48,7 @@ division_order = {
     "I": 4
 }
 
-def get_rank_value(tier, division, lp):
-    if tier in ["MASTER", "GRANDMASTER", "CHALLENGER"]:
-        return rank_order[tier] * 10000 + lp
-    return rank_order[tier] * 10000 + division_order[division] * 1000 + lp
-
+# Función que actualizará el leaderboard y verificará cambios de división
 async def update_leaderboard_message(message):
     while True:
         leaderboard = []
@@ -69,57 +65,41 @@ async def update_leaderboard_message(message):
                 summoner_data = response.json()
                 summoner_id = summoner_data.get('id')
 
-                # Obtener el usuario de Discord
-                member = message.guild.get_member(int(user_id))
-                discord_user = member.mention if member else f"<@{user_id}>"
-
-                if summoner_id:
-                    # Consultar la API de Riot para obtener los puntos de liga usando el summonerID
-                    league_response = requests.get(
-                        f"https://la1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}",
-                        headers={"X-Riot-Token": RIOT_API_KEY}
-                    )
-                    if league_response.status_code == 200:
-                        league_data = league_response.json()
-                        # Filtrar SoloQ
-                        soloq_data = next((entry for entry in league_data if entry['queueType'] == 'RANKED_SOLO_5x5'), None)
-                        if soloq_data:
-                            lp = soloq_data["leaguePoints"]
-                            tier = soloq_data["tier"].capitalize()  # Ej: 'GOLD' -> 'Gold'
-                            rank = soloq_data["rank"]  # División, ej: 'I', 'II'
-                            league_info = f"{tier} {rank} {lp} LP"
-                            rank_value = get_rank_value(tier.upper(), rank, lp)
-                        else:
-                            league_info = "Sin datos de SoloQ"
-                            rank_value = 0
-                        leaderboard.append((summoner_name, league_info, discord_user, rank_value))
-                    else:
-                        await message.channel.send(
-                            f"Error al obtener datos de liga para {summoner_name}. Código de error: {league_response.status_code}"
-                        )
-                        return
-                else:
-                    await message.channel.send(f"No se encontró el `summonerId` para el PUUID: {puuid}.")
-                    return
-            else:
-                await message.channel.send(
-                    f"Error al obtener datos del invocador para el PUUID: {puuid}. Código de error: {response.status_code}"
+                # Consultar la API de Riot para obtener los puntos de liga usando el summonerID
+                league_response = requests.get(
+                    f"https://la1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}",
+                    headers={"X-Riot-Token": RIOT_API_KEY}
                 )
-                return
+                if league_response.status_code == 200:
+                    league_data = league_response.json()
+                    soloq_data = next((entry for entry in league_data if entry['queueType'] == 'RANKED_SOLO_5x5'), None)
+                    if soloq_data:
+                        leaderboard.append({
+                            'summoner_name': summoner_name,
+                            'tier': soloq_data['tier'],
+                            'rank': soloq_data['rank'],
+                            'league_points': soloq_data['leaguePoints']
+                        })
+                    else:
+                        print(f"No se encontraron datos de SoloQ para {summoner_name}.")
+                else:
+                    print(f"Error al obtener datos de liga para {summoner_name}. Código de error: {league_response.status_code}")
+            else:
+                print(f"Error al obtener datos del invocador para el PUUID: {puuid}. Código de error: {response.status_code}")
 
-        # Ordenar el leaderboard por rank_value
-        leaderboard.sort(key=lambda x: x[3], reverse=True)
+        # Ordenar el leaderboard por puntos de liga
+        leaderboard.sort(key=lambda x: x['league_points'], reverse=True)
 
         # Crear el embed del leaderboard
         embed = discord.Embed(title="Leaderboard de SoloQ", color=discord.Color.blue())
-        for i, (summoner_name, league_info, discord_user, _) in enumerate(leaderboard):
-            embed.add_field(name=f"{i+1}. {summoner_name}", value=f"{league_info} ({discord_user})", inline=False)
+        for entry in leaderboard:
+            embed.add_field(name=entry['summoner_name'], value=f"{entry['tier']} {entry['rank']} - {entry['league_points']} LP", inline=False)
 
-        # Editar el mensaje con el nuevo embed
+        # Editar el mensaje original con el nuevo embed
         await message.edit(embed=embed)
 
-        # Esperar un tiempo antes de actualizar nuevamente (por ejemplo, cada 10 minutos)
-        await asyncio.sleep(600)
+        # Esperar un tiempo antes de actualizar nuevamente
+        await asyncio.sleep(600)  # Actualizar cada 10 minutos
 
 # Comando para mostrar el leaderboard
 @tree.command(
@@ -152,6 +132,7 @@ async def help_command(interaction: discord.Interaction):
     **Comandos disponibles**:
     `/vincular <game_name> <tag_line>`: Vincula tu cuenta de League of Legends usando Riot ID.
     `/leaderboard`: Muestra el leaderboard de LP de los miembros vinculados.
+    `/set_channel <canal>`: Configura el canal donde se enviarán las actualizaciones de subida y bajada de división.
     """
     await interaction.response.send_message(help_message)
 
@@ -173,19 +154,19 @@ async def vincular(interaction: discord.Interaction, game_name: str, tag_line: s
     )
     if response.status_code == 200:
         account_data = response.json()
-        puuid = account_data['puuid']
-        user_id = str(interaction.user.id)
-        player_accounts[user_id] = {'puuid': puuid, 'summoner_name': game_name}
-        save_accounts(file_path, player_accounts)
-        await interaction.response.send_message(f"Cuenta {game_name}#{tag_line} vinculada correctamente.")
-    else:
-        await interaction.response.send_message(f"Error al vincular la cuenta {game_name}#{tag_line}. Código de error: {response.status_code}")
+        puuid = account_data.get('puuid')
+        summoner_name = account_data.get('gameName')
 
-@client.event
-async def on_ready():
-    # Sincronizar los comandos con la guild sin eliminarlos
-    await tree.sync(guild=discord.Object(id=GUILD_ID))
-    print(f"Bot conectado como {client.user}")
+        # Guardar la cuenta vinculada en el diccionario
+        player_accounts[interaction.user.id] = {
+            'puuid': puuid,
+            'summoner_name': summoner_name
+        }
+        save_accounts(file_path, player_accounts)
+
+        await interaction.response.send_message(f"Cuenta vinculada correctamente: {summoner_name}")
+    else:
+        await interaction.response.send_message("Error al vincular la cuenta. Por favor, verifica tu Riot ID y vuelve a intentarlo.")
 
 # Iniciar el bot
 client.run(TOKEN)

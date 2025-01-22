@@ -130,7 +130,12 @@ async def update_leaderboard_message(message):
 async def leaderboard(interaction: discord.Interaction):
     # Crear el embed inicial
     embed = discord.Embed(title="Leaderboard de SoloQ", description="Cargando...", color=discord.Color.blue())
-    await interaction.response.send_message(embed=embed)
+    
+    try:
+        await interaction.response.send_message(embed=embed)
+    except discord.errors.NotFound:
+        await interaction.followup.send("La interacción ha expirado. Por favor, intenta de nuevo.")
+    
     message = await interaction.original_response()
 
     # Iniciar la tarea de actualización del leaderboard

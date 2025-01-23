@@ -107,7 +107,7 @@ async def update_leaderboard_message(message):
             break
 
         # Esperar un tiempo antes de actualizar nuevamente
-        await asyncio.sleep(300)  # Actualizar cada 10 minutos
+        await asyncio.sleep(300)  # Actualizar cada 5 minutos
 
 # Comando para mostrar el leaderboard
 @tree.command(

@@ -96,7 +96,15 @@ async def update_leaderboard_message(message):
             embed.add_field(name=entry['summoner_name'], value=f"{entry['tier']} {entry['rank']} - {entry['league_points']} LP", inline=False)
 
         # Editar el mensaje original con el nuevo embed
-        await message.edit(embed=embed)
+        try:
+            await message.edit(embed=embed)
+            print("Embed actualizado correctamente.")
+        except discord.errors.NotFound:
+            print("No se encontró el mensaje. Deteniendo la actualización del leaderboard.")
+            break
+        except Exception as e:
+            print(f"Error al actualizar el mensaje: {e}")
+            break
 
         # Esperar un tiempo antes de actualizar nuevamente
         await asyncio.sleep(600)  # Actualizar cada 10 minutos
@@ -110,13 +118,16 @@ async def update_leaderboard_message(message):
 async def leaderboard(interaction: discord.Interaction):
     # Crear el embed inicial
     embed = discord.Embed(title="Leaderboard de SoloQ", description="Cargando...", color=discord.Color.blue())
-    
+    message = None
     try:
         await interaction.response.send_message(embed=embed)
+        message = await interaction.original_response()
     except discord.errors.NotFound:
         await interaction.followup.send("La interacción ha expirado. Por favor, intenta de nuevo.")
-    
-    message = await interaction.original_response()
+        return
+    except Exception as e:
+        print(f"Error al enviar el mensaje: {e}")
+        return
 
     # Iniciar la tarea de actualización del leaderboard
     asyncio.create_task(update_leaderboard_message(message))

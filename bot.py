@@ -110,6 +110,81 @@ async def leaderboard_task():
         await asyncio.sleep(wait_time)
         await send_leaderboard()
 
+async def rank_update_task():
+    global notification_channel_id
+    await client.wait_until_ready()
+
+    while not client.is_closed():
+        guild = client.get_guild(GUILD_ID)
+
+        # Leer el canal desde JSON
+        notification_channel_id = player_accounts.get("notification_channel_id", None)
+        channel = guild.get_channel(notification_channel_id) if notification_channel_id else None
+
+        if not channel:
+            print("No se ha definido un canal para notificaciones de rango.")
+            await asyncio.sleep(60)
+            continue
+
+        for user_id, account_info in list(player_accounts.items()):
+            if user_id == "notification_channel_id":  # Ignorar esta clave del JSON
+                continue
+
+            puuid = account_info["puuid"]
+            summoner_name = account_info["summoner_name"]
+
+            # Obtener ID del invocador
+            response = requests.get(
+                f"https://la1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}",
+                headers={"X-Riot-Token": RIOT_API_KEY}
+            )
+            if response.status_code != 200:
+                continue  
+
+            summoner_data = response.json()
+            summoner_id = summoner_data.get("id")
+
+            # Obtener datos de SoloQ
+            league_response = requests.get(
+                f"https://la1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}",
+                headers={"X-Riot-Token": RIOT_API_KEY}
+            )
+            if league_response.status_code != 200:
+                continue
+
+            league_data = league_response.json()
+            soloq_data = next((entry for entry in league_data if entry['queueType'] == 'RANKED_SOLO_5x5'), None)
+
+            if soloq_data:
+                new_tier = soloq_data["tier"]
+                new_rank = soloq_data["rank"]
+                new_lp = soloq_data["leaguePoints"]
+                old_tier = account_info.get("tier", "UNRANKED")
+                old_rank = account_info.get("rank", "")
+                old_lp = account_info.get("lp", 0)
+
+                # Si hay cambio de rango o división
+                if new_tier != old_tier or new_rank != old_rank:
+                    member = guild.get_member(int(user_id))
+                    discord_user = member.mention if member else f"<@{user_id}>"
+
+                    await channel.send(f"🎉 ¡{discord_user} ha subido a {new_tier} {new_rank} con {new_lp} LP! 🎉")
+
+                elif new_lp < old_lp and (new_tier != old_tier or new_rank != old_rank):
+                    await channel.send(f"😢 {discord_user} ha bajado a {new_tier} {new_rank} con {new_lp} LP.")
+
+                # Guardar los nuevos valores en player_accounts
+                player_accounts[user_id]["tier"] = new_tier
+                player_accounts[user_id]["rank"] = new_rank
+                player_accounts[user_id]["lp"] = new_lp
+
+        # Guardar cambios en JSON
+        save_accounts(file_path, player_accounts)
+
+        await asyncio.sleep(60)  # Esperar 1 minuto antes de la siguiente verificación
+
+
+
 @tree.command(name="leaderboard", description="Muestra el leaderboard de LP de los miembros vinculados", guild=discord.Object(id=GUILD_ID))
 async def leaderboard(interaction: discord.Interaction):
     embed = discord.Embed(title="Leaderboard de SoloQ", description="Cargando...", color=discord.Color.blue())
@@ -129,6 +204,18 @@ async def definir_canal(interaction: discord.Interaction, canal: discord.TextCha
     channel_id = canal.id
     await interaction.response.send_message(f"Canal de mensajes automáticos definido en {canal.mention}")
 
+@tree.command(name="definir_canal_notificaciones", description="Define el canal donde se enviarán las notificaciones de cambios de rango", guild=discord.Object(id=GUILD_ID))
+async def definir_canal_notificaciones(interaction: discord.Interaction, canal: discord.TextChannel):
+    global notification_channel_id
+    notification_channel_id = canal.id
+
+    # Guardar en linked_accounts.json
+    player_accounts["notification_channel_id"] = notification_channel_id
+    save_accounts(file_path, player_accounts)
+
+    await interaction.response.send_message(f"Canal de notificaciones definido en {canal.mention}")
+
+
 @tree.command(name="help", description="Muestra los comandos disponibles", guild=discord.Object(id=GUILD_ID))
 async def help_command(interaction: discord.Interaction):
     help_message = """
@@ -145,5 +232,36 @@ async def on_ready():
     await tree.sync(guild=discord.Object(id=GUILD_ID))
     print(f"Bot conectado como {client.user}")
     asyncio.create_task(leaderboard_task())
+    asyncio.create_task(rank_update_task())
 
+@tree.command(
+    name="vincular",
+    description="Vincula tu cuenta de League of Legends usando Riot ID",
+    guild=discord.Object(id=GUILD_ID)
+)
+async def vincular(interaction: discord.Interaction, game_name: str, tag_line: str):
+    # Codificar el nombre del juego y la línea de etiqueta
+    encoded_game_name = quote_plus(game_name)
+    encoded_tag_line = quote_plus(tag_line)
+
+    # Consultar la API de Riot para obtener el PUUID usando el nombre y tag
+    response = requests.get(
+        f"https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{encoded_game_name}/{encoded_tag_line}",
+        headers={"X-Riot-Token": RIOT_API_KEY}
+    )
+    if response.status_code == 200:
+        account_data = response.json()
+        puuid = account_data.get('puuid')
+        summoner_name = account_data.get('gameName')
+
+        # Guardar la cuenta vinculada en el diccionario
+        player_accounts[interaction.user.id] = {
+            'puuid': puuid,
+            'summoner_name': summoner_name
+        }
+        save_accounts(file_path, player_accounts)
+
+        await interaction.response.send_message(f"Cuenta vinculada correctamente: {summoner_name}")
+    else:
+        await interaction.response.send_message("Error al vincular la cuenta. Por favor, verifica tu Riot ID y vuelve a intentarlo.")
 client.run(TOKEN)

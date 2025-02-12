@@ -121,7 +121,6 @@ async def send_leaderboard(interaction=None):
     # 🚀 Enviar todos los embeds en un solo mensaje (máximo 10 por mensaje)
     for i in range(0, len(embeds), 10):
         if interaction:
-            await interaction.response.defer()
             await interaction.followup.send(embeds=embeds[i:i+10])  
         else:
             await channel.send(embeds=embeds[i:i+10])
@@ -229,14 +228,15 @@ async def rank_update_task():
 async def test_embed(interaction: discord.Interaction):
     embed = discord.Embed(title="Embed de prueba", description="Esto es un mensaje de prueba.", color=discord.Color.green())
     embed.add_field(name="Jugador", value="Ejemplo", inline=False)
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
 
 
 @tree.command(name="leaderboard", description="Muestra el leaderboard de LP de los miembros vinculados", guild=discord.Object(id=GUILD_ID))
 async def leaderboard(interaction: discord.Interaction):
-    embed = discord.Embed(title="Leaderboard de SoloQ", description="Cargando...", color=discord.Color.blue())
-    await interaction.response.send_message(embed=embed)
-    await send_leaderboard()
+    await interaction.response.defer()  # 👈 Diferimos la respuesta SOLO aquí
+
+    await send_leaderboard(interaction)  # 👈 Ya NO debes llamar defer() en send_leaderboard()
+
 
 @tree.command(name="cambiar_api_key", description="Modifica la API Key de Riot en el .env", guild=discord.Object(id=GUILD_ID))
 async def cambiar_api_key(interaction: discord.Interaction, nueva_key: str):

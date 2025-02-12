@@ -1,26 +1,29 @@
 import json
 
+notification_channel_id = None  # 👈 Variable global
+
 def load_accounts(file_path):
+    global notification_channel_id
     try:
         with open(file_path, 'r') as file:
             accounts = json.load(file)
-        
-        # Asegurar que cada cuenta tiene los datos necesarios
-        for user_id, account in accounts.items():
-            if "tier" not in account:
-                account["tier"] = "UNRANKED"
-            if "rank" not in account:
-                account["rank"] = ""
-            if "lp" not in account:
-                account["lp"] = 0
+
+        # Si hay un canal de notificaciones, cargarlo en la variable global y eliminarlo del diccionario
+        notification_channel_id = accounts.pop("notification_channel_id", None)
 
         return accounts
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
 def save_accounts(file_path, accounts):
+    global notification_channel_id
+    # Guardar el canal de notificaciones por separado
+    data_to_save = accounts.copy()
+    if notification_channel_id:
+        data_to_save["notification_channel_id"] = notification_channel_id
+
     with open(file_path, 'w') as file:
-        json.dump(accounts, file, indent=4)
+        json.dump(data_to_save, file, indent=4)
 
 def load_accounts(file_path):
     try:

@@ -31,6 +31,7 @@ rank_order = {"IRON": 1, "BRONZE": 2, "SILVER": 3, "GOLD": 4, "PLATINUM": 5, "EM
 division_order = {"IV": 1, "III": 2, "II": 3, "I": 4}
 
 channel_id = None  # Canal donde se enviarán los mensajes automáticos
+notification_channel_id = None  # Inicializa la variable correctamente
 TEMPLATES_FILE = "embed_templates.json"
 
 def load_embed_templates():
@@ -42,6 +43,7 @@ def load_embed_templates():
         return {}  # Devuelve un diccionario vacío si hay un error
 
 embed_templates = load_embed_templates()
+
 
 def get_rank_value(tier, division, lp):
     if tier in ["MASTER", "GRANDMASTER", "CHALLENGER"]:
@@ -129,12 +131,8 @@ async def rank_update_task():
     global notification_channel_id
     await client.wait_until_ready()
 
-    # Si la variable no está en el JSON, la definimos como None
-    notification_channel_id = player_accounts.get("notification_channel_id", None)
-
     while not client.is_closed():
         guild = client.get_guild(GUILD_ID)
-
         channel = guild.get_channel(notification_channel_id) if notification_channel_id else None
 
         if not channel:
@@ -250,6 +248,7 @@ async def definir_canal_notificaciones(interaction: discord.Interaction, canal: 
     notification_channel_id = canal.id  # 👈 Guardamos en la variable global
 
     # Guardamos en el JSON correctamente
+    player_accounts["notification_channel_id"] = notification_channel_id
     save_accounts(file_path, player_accounts)
 
     await interaction.followup.send(f"✅ Canal de notificaciones definido en {canal.mention}")
@@ -267,10 +266,16 @@ async def help_command(interaction: discord.Interaction):
 
 @client.event
 async def on_ready():
+    global notification_channel_id
+
+    # Cargar el canal de notificaciones desde JSON si existe
+    notification_channel_id = player_accounts.get("notification_channel_id", None)
+
     await tree.sync(guild=discord.Object(id=GUILD_ID))
     print(f"Bot conectado como {client.user}")
     asyncio.create_task(leaderboard_task())
     asyncio.create_task(rank_update_task())
+
 
 @tree.command(
     name="vincular",

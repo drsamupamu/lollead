@@ -1,19 +1,24 @@
 {
     "leaderboard": {
-        "title": "📊 Leaderboard de SoloQ",
-        "color": "blue",
+        "title": "🏆 Leaderboard de SoloQ",
+        "description": "Ranking de los jugadores en SoloQ basado en LP.",
+        "color": "gold",
         "fields": [
-            {"name": "{rank}. {summoner_name}", "value": "{league_info} ({discord_user})", "inline": false}
+            {
+                "name": "#{rank} {summoner_name}",
+                "value": "**{tier} {rank}** - {lp} LP\n{discord_user}",
+                "inline": false
+            }
         ]
     },
     "rank_up": {
-        "title": "🚀 Ascenso de Rango",
-        "color": "green",
-        "description": "{discord_user} ha subido a **{new_tier} {new_rank}** con {new_lp} LP!"
+        "title": "🎉 ¡Ascenso de Rango!",
+        "description": "{discord_user} ha subido a **{new_tier} {new_rank}** con {new_lp} LP.",
+        "color": "green"
     },
     "rank_down": {
-        "title": "📉 Descenso de Rango",
-        "color": "red",
-        "description": "{discord_user} ha bajado a **{new_tier} {new_rank}** con {new_lp} LP."
+        "title": "😢 Descenso de Rango",
+        "description": "{discord_user} ha bajado a **{new_tier} {new_rank}** con {new_lp} LP.",
+        "color": "red"
     }
 }

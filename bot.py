@@ -66,53 +66,50 @@ async def send_leaderboard(interaction=None):
             await interaction.response.send_message("⚠️ El canal definido no es válido.", ephemeral=True)
         return
 
-    embed = discord.Embed(
-        title="📊 Leaderboard de SoloQ",
-        description="Ranking de los jugadores según LP",
-        color=discord.Color.blue()
-    )
+    # Cargar plantilla del JSON
+    leaderboard_template = embed_templates.get("leaderboard", {})
 
-    # 🛠️ Filtrar solo jugadores válidos
+    # 🛠️ Filtrar jugadores válidos
     valid_players = {
         user_id: info for user_id, info in player_accounts.items()
         if isinstance(info, dict) and "lp" in info
     }
 
     if not valid_players:
-        print("⚠️ No hay datos de SoloQ disponibles.")
         await channel.send("⚠️ No hay datos de SoloQ disponibles.")
         return
 
-    # Ordenar por LP de mayor a menor
+    # Ordenar jugadores por LP de mayor a menor
     sorted_players = sorted(valid_players.items(), key=lambda x: x[1]["lp"], reverse=True)
 
-    # Agregar datos de cada jugador al embed
+    # Configurar color del embed
+    embed_color = getattr(discord.Color, leaderboard_template.get("color", "blue"), discord.Color.blue)()
+
+    embed = discord.Embed(
+        title=leaderboard_template.get("title", "📊 Leaderboard de SoloQ"),
+        description=leaderboard_template.get("description", "Ranking de los jugadores en SoloQ basado en LP."),
+        color=embed_color
+    )
+
+    # Agregar jugadores al embed
     for i, (user_id, account_info) in enumerate(sorted_players):
-        summoner_name = account_info.get("summoner_name", "Desconocido")
-        tier = account_info.get("tier", "UNRANKED")
-        rank = account_info.get("rank", "")
-        lp = account_info.get("lp", 0)
-        discord_user = f"<@{user_id}>"
+        field_template = leaderboard_template["fields"][0]  # Solo un formato de field
+        embed.add_field(
+            name=field_template["name"].format(rank=i+1, summoner_name=account_info["summoner_name"]),
+            value=field_template["value"].format(
+                tier=account_info["tier"], rank=account_info["rank"], lp=account_info["lp"], discord_user=f"<@{user_id}>"
+            ),
+            inline=field_template["inline"]
+        )
 
-        # 🔍 Evitar `None` en valores
-        field_name = f"#{i+1} {summoner_name}"
-        field_value = f"**{tier} {rank}** - {lp} LP\n{discord_user}"
+    # Enviar embed
+    if interaction:
+        await interaction.response.defer()
+        await interaction.followup.send(embed=embed)
+    else:
+        await channel.send(embed=embed)
 
-        embed.add_field(name=field_name, value=field_value, inline=False)
-
-    try:
-        if interaction:
-            await interaction.response.defer()
-            await interaction.followup.send(embed=embed)
-        else:
-            await channel.send(embed=embed)
-
-        print("✅ Leaderboard enviado con éxito.")
-
-    except Exception as e:
-        print(f"❌ Error al enviar el leaderboard: {e}")
-        if interaction:
-            await interaction.response.send_message(f"❌ Error al enviar el leaderboard: {e}", ephemeral=True)
+    print("✅ Leaderboard enviado con éxito.")
 
 async def leaderboard_task():
     while True:

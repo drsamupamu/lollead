@@ -68,48 +68,63 @@ async def send_leaderboard(interaction=None):
             await interaction.response.send_message("⚠️ El canal definido no es válido.", ephemeral=True)
         return
 
-    # Cargar plantilla del JSON
-    leaderboard_template = embed_templates.get("leaderboard", {})
-
     # 🛠️ Filtrar jugadores válidos
     valid_players = {
-        user_id: info for user_id, info in player_accounts.items()
-        if isinstance(info, dict) and "lp" in info
+        str(user_id): info for user_id, info in player_accounts.items()
+        if isinstance(info, dict) and "lp" in info and "tier" in info and "rank" in info
     }
 
     if not valid_players:
         await channel.send("⚠️ No hay datos de SoloQ disponibles.")
         return
 
-    # Ordenar jugadores por LP de mayor a menor
-    sorted_players = sorted(valid_players.items(), key=lambda x: x[1]["lp"], reverse=True)
+    # 📊 Ordenar primero por rango y luego por LP
+    sorted_players = sorted(valid_players.items(), key=lambda x: (
+        rank_order.get(x[1]["tier"].upper(), 0),
+        division_order.get(x[1]["rank"], 0),
+        x[1]["lp"]
+    ), reverse=True)
 
-    # Configurar color del embed
-    embed_color = getattr(discord.Color, leaderboard_template.get("color", "blue"), discord.Color.blue)()
+    embeds = []
 
-    embed = discord.Embed(
-        title=leaderboard_template.get("title", "📊 Leaderboard de SoloQ"),
-        description=leaderboard_template.get("description", "Ranking de los jugadores en SoloQ basado en LP."),
-        color=embed_color
-    )
-
-    # Agregar jugadores al embed
     for i, (user_id, account_info) in enumerate(sorted_players):
-        field_template = leaderboard_template["fields"][0]  # Solo un formato de field
-        embed.add_field(
-            name=field_template["name"].format(rank=i+1, summoner_name=account_info["summoner_name"]),
-            value=field_template["value"].format(
-                tier=account_info["tier"], rank=account_info["rank"], lp=account_info["lp"], discord_user=f"<@{user_id}>"
-            ),
-            inline=field_template["inline"]
+        try:
+            member = guild.get_member(int(user_id))
+            if member is None:
+                await asyncio.sleep(1)  # Evitar rate limits
+                member = await guild.fetch_member(int(user_id))  
+            
+            discord_user = f"**{member.mention}**" if member else "**@Jugador Desconocido**"
+            avatar_url = member.display_avatar.url if member else None
+        except Exception as e:
+            print(f"⚠️ Error obteniendo miembro {user_id}: {e}")
+            discord_user = "**@Jugador Desconocido**"
+            avatar_url = None
+
+        tier = account_info.get("tier", "UNRANKED")
+        rank = account_info.get("rank", "")
+        lp = account_info.get("lp", 0)
+        summoner_name = account_info.get("summoner_name", "Desconocido")
+
+        # 🔹 Crear embed por jugador
+        embed = discord.Embed(
+            title=f"🏆 #{i+1}",
+            description=f"{discord_user}\n\n**{tier} {rank}** - {lp} LP\n🎮 **Nick:** {summoner_name}",
+            color=discord.Color.blue()
         )
 
-    # Enviar embed
-    if interaction:
-        await interaction.response.defer()
-        await interaction.followup.send(embed=embed)
-    else:
-        await channel.send(embed=embed)
+        if avatar_url:
+            embed.set_thumbnail(url=avatar_url)  # 📷 Foto de perfil del usuario
+
+        embeds.append(embed)
+
+    # 🚀 Enviar todos los embeds en un solo mensaje (máximo 10 por mensaje)
+    for i in range(0, len(embeds), 10):
+        if interaction:
+            await interaction.response.defer()
+            await interaction.followup.send(embeds=embeds[i:i+10])  
+        else:
+            await channel.send(embeds=embeds[i:i+10])
 
     print("✅ Leaderboard enviado con éxito.")
 

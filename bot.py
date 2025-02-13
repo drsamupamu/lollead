@@ -9,6 +9,7 @@ from urllib.parse import quote_plus
 from dotenv import load_dotenv, set_key
 import time
 import json
+import pytz
 
 # Cargar variables de entorno
 load_dotenv()
@@ -33,6 +34,8 @@ division_order = {"IV": 1, "III": 2, "II": 3, "I": 4}
 channel_id = None  # Canal donde se enviarán los mensajes automáticos
 notification_channel_id = None  # Inicializa la variable correctamente
 TEMPLATES_FILE = "embed_templates.json"
+
+CDMX_TZ = pytz.timezone("America/Mexico_City")
 
 def load_embed_templates():
     try:
@@ -129,16 +132,19 @@ async def send_leaderboard(interaction=None):
 
 async def leaderboard_task():
     while True:
-        now = datetime.datetime.now()
-        target_time = datetime.datetime(now.year, now.month, now.day, 19, 0)  # 7 PM CDMX
+        now = datetime.datetime.now(CDMX_TZ)  # ⏳ Forzar zona horaria CDMX
+        target_time = datetime.datetime.combine(now.date(), datetime.time(19, 0))
+        target_time = CDMX_TZ.localize(target_time)  # 🔥 Asegurar conversión correcta
+
         if now > target_time:
             target_time += datetime.timedelta(days=1)
-        
+
         wait_time = (target_time - now).total_seconds()
-        print(f"⏳ Esperando {wait_time} segundos para enviar el leaderboard automático.")  # 👈 Depuración
+
+        print(f"⏳ Esperando {wait_time:.2f} segundos para enviar el leaderboard automático.") 
         
         await asyncio.sleep(wait_time)
-        print("🚀 Enviando leaderboard automático...")  # 👈 Mensaje cuando se ejecuta
+        print("🚀 Enviando leaderboard automático...")
         await send_leaderboard()
 
 async def rank_update_task():
@@ -162,23 +168,30 @@ async def rank_update_task():
             summoner_name = account_info.get("summoner_name")
 
             try:
-                response = requests.get(
+                # ⚡ Ejecutar requests.get() en un hilo separado para evitar bloquear el loop de eventos
+                response = await asyncio.to_thread(requests.get,
                     f"https://la1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}",
                     headers={"X-Riot-Token": RIOT_API_KEY},
                     timeout=5
                 )
+
                 if response.status_code != 200:
+                    print(f"❌ Error API Summoner {summoner_name}: {response.status_code}")
+                    await asyncio.sleep(2)  # ⏳ Espera antes de la próxima iteración
                     continue
 
                 summoner_data = response.json()
                 summoner_id = summoner_data.get("id")
 
-                league_response = requests.get(
+                league_response = await asyncio.to_thread(requests.get,
                     f"https://la1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}",
                     headers={"X-Riot-Token": RIOT_API_KEY},
                     timeout=5
                 )
+
                 if league_response.status_code != 200:
+                    print(f"❌ Error API Liga {summoner_name}: {league_response.status_code}")
+                    await asyncio.sleep(2)
                     continue
 
                 league_data = league_response.json()
@@ -218,7 +231,10 @@ async def rank_update_task():
                     player_accounts[user_id]["rank"] = new_rank
                     player_accounts[user_id]["lp"] = new_lp
 
-            except requests.exceptions.RequestException:
+                await asyncio.sleep(3)  # ⏳ Espera entre peticiones para evitar rate limits
+
+            except requests.exceptions.RequestException as e:
+                print(f"🚨 Error de conexión con Riot API: {e}")
                 await asyncio.sleep(10)
 
         save_accounts(file_path, player_accounts)
